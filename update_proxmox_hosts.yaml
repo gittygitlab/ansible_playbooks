@@ -8,7 +8,7 @@
       
     - name: Upgrade all apt packages
       apt: state=latest force_apt_get=yes
-      
+    
     - name: Upgrade the OS (apt-get dist-upgrade)
       ansible.builtin.apt:
       upgrade: dist
