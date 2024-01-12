@@ -1,6 +1,6 @@
 ---
-- name: Upgrade Portainer
-  hosts: portainer
+- hosts: all
+  gather_facts: yes
   become: yes
 
   tasks:
