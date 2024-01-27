@@ -31,3 +31,4 @@
       apt:
         autoremove: yes
         autoclean: yes
+        clean: yes
