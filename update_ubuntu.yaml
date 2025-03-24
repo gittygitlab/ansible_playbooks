@@ -3,21 +3,39 @@
   gather_facts: yes
   become: yes
 
-  tasks:
-    - name: Update apt-get repo and cache
-      apt: update_cache=yes force_apt_get=yes cache_valid_time=3600
-      
-    - name: Upgrade all apt packages
-      apt: state=latest force_apt_get=yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
-    - name: Perform a dist-upgrade.
-      ansible.builtin.apt:
+  tasks:
+    - name: Ensure Python dependencies are installed
+      apt:
+        name: python3-pip
+        state: present
+
+    - name: Install required Python libraries
+      pip:
+        name: six
+
+    - name: Update apt-get repo and cache
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all apt packages
+      apt:
+        state: latest
+        force_apt_get: yes
+
+    - name: Perform a dist-upgrade
+      apt:
         upgrade: dist
         update_cache: yes
 
     - name: Check if a reboot is needed for Debian and Ubuntu boxes
+      stat:
+        path: /var/run/reboot-required
       register: reboot_required_file
-      stat: path=/var/run/reboot-required get_md5=no
 
     - name: Reboot the Debian or Ubuntu server
       reboot:
@@ -29,6 +47,6 @@
         test_command: uptime
       when: reboot_required_file.stat.exists
 
-    - name: Remove dependencies that are no longer required.
-      ansible.builtin.apt:
+    - name: Remove dependencies that are no longer required
+      apt:
         autoremove: yes
