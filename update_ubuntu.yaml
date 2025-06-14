@@ -13,16 +13,14 @@
         force_apt_get: yes # Ensure apt-get is used for full control
         autoclean: yes    # Clean up old packages to free space
         autoremove: yes   # Remove unused dependencies
-      register: apt_initial_setup_result
-      # If this task fails, the problem is fundamental
-      failed_when: apt_initial_setup_result.rc != 0
+      # Removed failed_when as apt module handles its own failure state
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Try to configure unconfigured packages (pre-check)
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_configure_result
       changed_when: dpkg_configure_result.stdout | length > 0
-      failed_when: dpkg_configure_result.rc != 0
+      failed_when: dpkg_configure_result.rc != 0 # This is correct for 'command' module
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Check existence and permissions of dpkg lock-frontend file
