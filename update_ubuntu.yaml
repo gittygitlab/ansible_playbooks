@@ -1,40 +1,40 @@
 ---
 - hosts: all
   gather_facts: yes
-  become: yes # Ensures all tasks run with sudo/root privileges
+  become: yes
 
   vars:
     ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    # Ensure apt-get is ready for package management
+    # --- Start of unattended-upgrades management ---
+    - name: Check if unattended-upgrades service exists
+      ansible.builtin.stat:
+        path: /etc/systemd/system/unattended-upgrades.service
+      register: unattended_upgrades_service_file
+
+    - name: Stop and disable unattended-upgrades temporarily if it exists
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        state: stopped
+        enabled: false
+      when: unattended_upgrades_service_file.stat.exists
+      ignore_errors: yes # Added for robustness in case it's not present or fails
+
+    # --- End of unattended-upgrades management ---
+
     - name: Ensure Python dependencies are installed and apt cache is updated
       ansible.builtin.apt:
         name: python3-pip
         state: present
-        update_cache: yes # This will update the cache before installing
+        update_cache: yes
         cache_valid_time: 3600
 
-    # Install 'six' using apt. This is the recommended way for system-wide packages.
-    # Check if your distribution provides python3-six. Most do.
     - name: Install required Python libraries (via apt)
       ansible.builtin.apt:
-        name: python3-six # Try to install 'six' via apt
+        name: python3-six
         state: present
-      ignore_errors: true # Add this to continue if python3-six is not found via apt
-                          # If this fails, you might need to reconsider your approach for 'six'
-                          # e.g., if it's truly a non-system library, use a venv.
-
-    # If the above task for python3-six fails, and you absolutely *must* install it via pip
-    # for a specific reason (e.g., your distro doesn't provide it, or you need a newer version
-    # than apt offers), you would typically do it in a virtual environment.
-    # However, for a simple dependency like 'six', apt is usually preferred.
-    # If you need to force pip installation *despite PEP 668* (not recommended for system-wide):
-    # - name: Install 'six' via pip (forcefully, NOT RECOMMENDED for system-wide)
-    #   ansible.builtin.pip:
-    #     name: six
-    #     extra_args: --break-system-packages # Use with extreme caution!
-    #   when: false # Set to true only if you understand the risks and apt method fails
+      ignore_errors: yes
 
     - name: Upgrade all apt packages
       ansible.builtin.apt:
@@ -44,9 +44,6 @@
     - name: Perform a dist-upgrade
       ansible.builtin.apt:
         upgrade: dist
-        # update_cache is handled by the initial apt task
-        # No need for update_cache here as it was just updated in the first task
-        # or will be updated again by the next task if cache_valid_time expires.
 
     - name: Check if a reboot is needed for Debian and Ubuntu boxes
       ansible.builtin.stat:
@@ -66,4 +63,14 @@
     - name: Remove dependencies that are no longer required
       ansible.builtin.apt:
         autoremove: yes
-        autoclean: yes # Good practice to also clean the cache
+        autoclean: yes
+
+    # --- Re-enable unattended-upgrades after all apt operations ---
+    - name: Re-enable unattended-upgrades if it existed
+      ansible.builtin.systemd:
+        name: unattended-upgrades
+        state: started
+        enabled: true
+      when: unattended_upgrades_service_file.stat.exists
+      ignore_errors: yes
+    # --- End of unattended-upgrades re-enablement ---
