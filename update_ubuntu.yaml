@@ -1,44 +1,60 @@
 ---
 - hosts: all
   gather_facts: yes
-  become: yes
+  become: yes # Ensures all tasks run with sudo/root privileges
 
   vars:
     ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    - name: Ensure Python dependencies are installed
-      apt:
+    # Ensure apt-get is ready for package management
+    - name: Ensure Python dependencies are installed and apt cache is updated
+      ansible.builtin.apt:
         name: python3-pip
         state: present
-
-    - name: Install required Python libraries
-      pip:
-        name: six
-
-    - name: Update apt-get repo and cache
-      apt:
-        update_cache: yes
-        force_apt_get: yes
+        update_cache: yes # This will update the cache before installing
         cache_valid_time: 3600
 
+    # Install 'six' using apt. This is the recommended way for system-wide packages.
+    # Check if your distribution provides python3-six. Most do.
+    - name: Install required Python libraries (via apt)
+      ansible.builtin.apt:
+        name: python3-six # Try to install 'six' via apt
+        state: present
+      ignore_errors: true # Add this to continue if python3-six is not found via apt
+                          # If this fails, you might need to reconsider your approach for 'six'
+                          # e.g., if it's truly a non-system library, use a venv.
+
+    # If the above task for python3-six fails, and you absolutely *must* install it via pip
+    # for a specific reason (e.g., your distro doesn't provide it, or you need a newer version
+    # than apt offers), you would typically do it in a virtual environment.
+    # However, for a simple dependency like 'six', apt is usually preferred.
+    # If you need to force pip installation *despite PEP 668* (not recommended for system-wide):
+    # - name: Install 'six' via pip (forcefully, NOT RECOMMENDED for system-wide)
+    #   ansible.builtin.pip:
+    #     name: six
+    #     extra_args: --break-system-packages # Use with extreme caution!
+    #   when: false # Set to true only if you understand the risks and apt method fails
+
     - name: Upgrade all apt packages
-      apt:
+      ansible.builtin.apt:
         state: latest
         force_apt_get: yes
 
     - name: Perform a dist-upgrade
-      apt:
+      ansible.builtin.apt:
         upgrade: dist
-        update_cache: yes
+        # update_cache is handled by the initial apt task
+        # No need for update_cache here as it was just updated in the first task
+        # or will be updated again by the next task if cache_valid_time expires.
 
     - name: Check if a reboot is needed for Debian and Ubuntu boxes
-      stat:
+      ansible.builtin.stat:
         path: /var/run/reboot-required
       register: reboot_required_file
 
     - name: Reboot the Debian or Ubuntu server
-      reboot:
+      ansible.builtin.reboot:
         msg: "Reboot initiated by Ansible due to kernel updates"
         connect_timeout: 5
         reboot_timeout: 300
@@ -48,5 +64,6 @@
       when: reboot_required_file.stat.exists
 
     - name: Remove dependencies that are no longer required
-      apt:
+      ansible.builtin.apt:
         autoremove: yes
+        autoclean: yes # Good practice to also clean the cache
