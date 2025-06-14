@@ -6,6 +6,67 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
 
+  pre_tasks:
+    - name: Ensure dpkg is configured and apt cache is updated (pre-check)
+      ansible.builtin.apt:
+        update_cache: yes
+        force_apt_get: yes # Ensure apt-get is used for full control
+        autoclean: yes    # Clean up old packages to free space
+        autoremove: yes   # Remove unused dependencies
+      register: apt_initial_setup_result
+      # If this task fails, the problem is fundamental
+      failed_when: apt_initial_setup_result.rc != 0
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Try to configure unconfigured packages (pre-check)
+      ansible.builtin.command: dpkg --configure -a
+      register: dpkg_configure_result
+      changed_when: dpkg_configure_result.stdout | length > 0
+      failed_when: dpkg_configure_result.rc != 0
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Check existence and permissions of dpkg lock-frontend file
+      ansible.builtin.stat:
+        path: /var/lib/dpkg/lock-frontend
+      register: dpkg_lock_stat
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Debug dpkg lock-frontend file status
+      ansible.builtin.debug:
+        msg: "dpkg_lock_stat: {{ dpkg_lock_stat }}"
+      when:
+        - ansible_facts['os_family'] == 'Debian'
+        - dpkg_lock_stat.stat.exists is defined and dpkg_lock_stat.stat.exists
+
+    - name: Check existence and permissions of apt lists lock file
+      ansible.builtin.stat:
+        path: /var/lib/apt/lists/lock
+      register: apt_lists_lock_stat
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Debug apt lists lock file status
+      ansible.builtin.debug:
+        msg: "apt_lists_lock_stat: {{ apt_lists_lock_stat }}"
+      when:
+        - ansible_facts['os_family'] == 'Debian'
+        - apt_lists_lock_stat.stat.exists is defined and apt_lists_lock_stat.stat.exists
+
+    - name: Test write permissions in /var/lib/dpkg/ directory as root
+      ansible.builtin.shell: |
+        sudo touch /var/lib/dpkg/ansible_test_file && sudo rm /var/lib/dpkg/ansible_test_file
+      register: write_test_result
+      failed_when: write_test_result.rc != 0
+      changed_when: false # This task doesn't make permanent changes
+      ignore_errors: yes  # So playbook doesn't stop here, but shows the error in debug
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Debug write test result in /var/lib/dpkg/
+      ansible.builtin.debug:
+        msg: "Write test result for /var/lib/dpkg/: {{ write_test_result }}"
+      when:
+        - ansible_facts['os_family'] == 'Debian'
+        - write_test_result.skipped is not defined or not write_test_result.skipped
+
   tasks:
     - name: Ensure Python dependencies are installed
       ansible.builtin.apt:
@@ -13,26 +74,31 @@
         state: present
         update_cache: yes
         cache_valid_time: 3600
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Install required Python libraries (via apt)
       ansible.builtin.apt:
         name: python3-six
         state: present
-      ignore_errors: yes
+      ignore_errors: yes # Keeping this for the original intent
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Upgrade all apt packages
       ansible.builtin.apt:
         state: latest
         force_apt_get: yes
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Perform a dist-upgrade
       ansible.builtin.apt:
         upgrade: dist
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Check if a reboot is needed for Debian and Ubuntu boxes
       ansible.builtin.stat:
         path: /var/run/reboot-required
       register: reboot_required_file
+      when: ansible_facts['os_family'] == 'Debian'
 
     - name: Reboot the Debian or Ubuntu server
       ansible.builtin.reboot:
@@ -42,9 +108,12 @@
         pre_reboot_delay: 0
         post_reboot_delay: 30
         test_command: uptime
-      when: reboot_required_file.stat.exists
+      when:
+        - ansible_facts['os_family'] == 'Debian'
+        - reboot_required_file.stat.exists
 
     - name: Remove dependencies that are no longer required
       ansible.builtin.apt:
         autoremove: yes
         autoclean: yes
+      when: ansible_facts['os_family'] == 'Debian'
