@@ -7,20 +7,47 @@
     ansible_python_interpreter: /usr/bin/python3
 
   pre_tasks:
+    - name: Wait for apt lock to be released (up to 5 minutes)
+      ansible.builtin.shell: |
+        set -e # Exit immediately if a command exits with a non-zero status.
+        LOCK_FILES="/var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock"
+        TIMEOUT=300 # 5 minutes in seconds
+        INTERVAL=10 # Check every 10 seconds
+        ELAPSED=0
+
+        echo "Attempting to acquire apt locks for up to ${TIMEOUT} seconds..."
+        for lock_file in ${LOCK_FILES}; do
+            while fuser "${lock_file}" >/dev/null 2>&1; do
+                if [ ${ELAPSED} -ge ${TIMEOUT} ]; then
+                    echo "ERROR: Timeout waiting for lock file ${lock_file} to be released." >&2
+                    exit 1
+                fi
+                echo "Waiting for lock file: ${lock_file} (Process: $(fuser "${lock_file}" 2>/dev/null))"
+                sleep ${INTERVAL}
+                ELAPSED=$((ELAPSED + INTERVAL))
+            done
+        done
+        echo "All apt locks are clear. Proceeding."
+      args:
+        warn: false # Suppress warning about using shell
+      register: apt_lock_wait_status
+      failed_when: "'ERROR: Timeout' in apt_lock_wait_status.stderr"
+      changed_when: false
+      when: ansible_facts['os_family'] == 'Debian'
+
     - name: Ensure dpkg is configured and apt cache is updated (pre-check)
       ansible.builtin.apt:
         update_cache: yes
-        force_apt_get: yes # Ensure apt-get is used for full control
-        autoclean: yes    # Clean up old packages to free space
-        autoremove: yes   # Remove unused dependencies
-      # Removed failed_when as apt module handles its own failure state
+        force_apt_get: yes
+        autoclean: yes
+        autoremove: yes
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Try to configure unconfigured packages (pre-check)
       ansible.builtin.command: dpkg --configure -a
       register: dpkg_configure_result
       changed_when: dpkg_configure_result.stdout | length > 0
-      failed_when: dpkg_configure_result.rc != 0 # This is correct for 'command' module
+      failed_when: dpkg_configure_result.rc != 0
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Check existence and permissions of dpkg lock-frontend file
@@ -54,8 +81,8 @@
         sudo touch /var/lib/dpkg/ansible_test_file && sudo rm /var/lib/dpkg/ansible_test_file
       register: write_test_result
       failed_when: write_test_result.rc != 0
-      changed_when: false # This task doesn't make permanent changes
-      ignore_errors: yes  # So playbook doesn't stop here, but shows the error in debug
+      changed_when: false
+      ignore_errors: yes
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Debug write test result in /var/lib/dpkg/
@@ -78,7 +105,7 @@
       ansible.builtin.apt:
         name: python3-six
         state: present
-      ignore_errors: yes # Keeping this for the original intent
+      ignore_errors: yes
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Upgrade all apt packages
