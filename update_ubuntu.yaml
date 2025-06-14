@@ -29,8 +29,11 @@
         done
         echo "All apt locks are clear. Proceeding."
       args:
-        warn: false # Suppress warning about using shell
+        # warn: false # <--- REMOVED THIS LINE
+        executable: /bin/bash # Explicitly use bash for the script
       register: apt_lock_wait_status
+      # The failed_when conditional depends on the script actually producing stderr,
+      # which it will if it times out.
       failed_when: "'ERROR: Timeout' in apt_lock_wait_status.stderr"
       changed_when: false
       when: ansible_facts['os_family'] == 'Debian'
