@@ -7,41 +7,7 @@
     ansible_python_interpreter: /usr/bin/python3
 
   tasks:
-    # --- Start of unattended-upgrades management ---
-    - name: Check if unattended-upgrades service exists (common systemd location)
-      ansible.builtin.stat:
-        path: /lib/systemd/system/unattended-upgrades.service
-      register: unattended_upgrades_service_file
-
-    - name: Stop unattended-upgrades service if it exists
-      ansible.builtin.systemd:
-        name: unattended-upgrades
-        state: stopped
-      when: unattended_upgrades_service_file.stat.exists
-      ignore_errors: yes # Still ignore errors to allow playbook to continue if stopping fails unexpectedly
-      # Add a short delay after stopping, if this proves to be a timing issue
-      # delay: 5 # Uncomment and adjust if still hitting issues
-
-    - name: Disable unattended-upgrades service permanently if it exists
-      # Using command module for update-rc.d directly, as systemd module seems to struggle
-      # This addresses the "update-rc.d: error: Permission denied" specifically.
-      ansible.builtin.command: /usr/sbin/update-rc.d unattended-upgrades disable
-      when: unattended_upgrades_service_file.stat.exists
-      register: disable_result
-      changed_when: disable_result.rc == 0 and 'disabled' in disable_result.stdout
-      failed_when: "'Permission denied' in disable_result.stderr" # Explicitly fail on permission denied
-      ignore_errors: yes # If this still fails, allow apt tasks to attempt to run
-      # It's okay to ignore this if we can't disable it, as long as it's stopped.
-      # The main goal here is to stop it during the run.
-
-    - name: Wait for systemd to stabilize (optional, but can help with timeouts)
-      ansible.builtin.pause:
-        seconds: 5
-      when: unattended_upgrades_service_file.stat.exists # Only pause if service exists
-
-    # --- End of unattended-upgrades management ---
-
-    - name: Ensure Python dependencies are installed and apt cache is updated
+    - name: Ensure Python dependencies are installed
       ansible.builtin.apt:
         name: python3-pip
         state: present
@@ -82,21 +48,3 @@
       ansible.builtin.apt:
         autoremove: yes
         autoclean: yes
-
-    # --- Re-enable unattended-upgrades after all apt operations ---
-    - name: Enable unattended-upgrades (using update-rc.d) if it existed
-      ansible.builtin.command: /usr/sbin/update-rc.d unattended-upgrades enable
-      when: unattended_upgrades_service_file.stat.exists
-      register: enable_result
-      changed_when: enable_result.rc == 0 and 'enabled' in enable_result.stdout
-      failed_when: "'Permission denied' in enable_result.stderr"
-      ignore_errors: yes
-
-    - name: Start unattended-upgrades service if it was running and existed
-      ansible.builtin.systemd:
-        name: unattended-upgrades
-        state: started
-        enabled: true # Ensure it's enabled after our run if it was before
-      when: unattended_upgrades_service_file.stat.exists
-      ignore_errors: yes # Ignore if it fails to start for some reason
-    # --- End of unattended-upgrades re-enablement ---
