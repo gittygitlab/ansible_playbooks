@@ -1,51 +1,34 @@
 ---
 - hosts: all
-  gather_facts: yes # Essential for Ansible to collect host information
-  become: yes       # Use sudo for privileged commands (password will come from Semaphore)
+  gather_facts: yes
+  become: yes
 
   vars:
-    # Explicitly set the Python interpreter path on the remote hosts.
-    # This helps Ansible locate the correct Python 3 for its operations.
     ansible_python_interpreter: /usr/bin/python3
-
-    # Define a custom temporary directory for Ansible on the remote hosts.
-    # This can sometimes resolve issues with default temp locations or permissions.
     ansible_remote_tmp: /tmp/.ansible_tmp
 
-    # --- Portainer Configuration Variables (using lts tag) ---
     portainer_container_name: portainer
     portainer_image_lts: portainer/portainer-ce:lts
-    # Combining ports and volumes into single strings for direct shell command use
     portainer_ports_args: "-p 8000:8000 -p 9443:9443"
     portainer_volumes_args: "-v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data"
     portainer_restart_policy_arg: "--restart=always"
 
   tasks:
     - name: Stop Portainer container if running
-      # The '|| true' ensures the command doesn't fail the task if the container
-      # is already stopped or doesn't exist, making it more robust.
       shell: "docker stop {{ portainer_container_name }} || true"
       register: stop_result
-      changed_when: stop_result.rc == 0 # Mark as changed only if the stop command actually executed successfully
+      changed_when: stop_result.rc == 0
 
     - name: Remove Portainer container if it exists
-      # The '|| true' ensures the command doesn't fail the task if the container
-      # doesn't exist, making it more robust.
       shell: "docker rm {{ portainer_container_name }} || true"
       register: rm_result
-      changed_when: rm_result.rc == 0 # Mark as changed only if the remove command actually executed successfully
+      changed_when: rm_result.rc == 0
 
     - name: Pull newest Portainer LTS image
-      # This pulls the image; it will report 'changed' if a new image is downloaded.
       shell: "docker pull {{ portainer_image_lts }}"
       register: pull_result
-      # Optional: To make this truly idempotent in terms of 'changed' state,
-      # you would first check if the current image hash is different, but for pull,
-      # it's generally fine to always report changed if anything was downloaded.
 
     - name: Run Portainer container
-      # This runs the new container. Note the use of '>' for multiline shell commands for readability.
-      # This task will usually report 'changed' as it creates or replaces a container.
       shell: >
         docker run -d
         {{ portainer_ports_args }}
@@ -56,7 +39,6 @@
       register: run_result
 
     - name: Display Portainer run command output (optional)
-      # Provides insight into what the docker run command returned.
       ansible.builtin.debug:
         msg: "Portainer run command stdout: {{ run_result.stdout }}"
-      when: run_result is success # Only show if the command ran without error
+      when: run_result is success
