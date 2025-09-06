@@ -29,21 +29,24 @@
         done
         echo "All apt locks are clear. Proceeding."
       args:
-        # warn: false # <--- REMOVED THIS LINE
         executable: /bin/bash # Explicitly use bash for the script
       register: apt_lock_wait_status
-      # The failed_when conditional depends on the script actually producing stderr,
-      # which it will if it times out.
       failed_when: "'ERROR: Timeout' in apt_lock_wait_status.stderr"
       changed_when: false
       when: ansible_facts['os_family'] == 'Debian'
 
-    - name: Ensure dpkg is configured and apt cache is updated (pre-check)
+    # This task now includes a retry mechanism to handle temporary repository issues.
+    # It will attempt to update the apt cache up to 3 times before failing.
+    - name: Ensure dpkg is configured and apt cache is updated (pre-check with retry)
       ansible.builtin.apt:
         update_cache: yes
         force_apt_get: yes
         autoclean: yes
         autoremove: yes
+      register: apt_update_result
+      retries: 3
+      delay: 10
+      until: not apt_update_result.failed or ('500 Internal Server Error' not in apt_update_result.msg and '404 Not Found' not in apt_update_result.msg)
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Try to configure unconfigured packages (pre-check)
@@ -111,15 +114,25 @@
       ignore_errors: yes
       when: ansible_facts['os_family'] == 'Debian'
 
-    - name: Upgrade all apt packages
+    # This task now includes a retry mechanism for transient network failures.
+    - name: Upgrade all apt packages with retry
       ansible.builtin.apt:
         state: latest
         force_apt_get: yes
+      register: apt_upgrade_result
+      retries: 5
+      delay: 15
+      until: not apt_upgrade_result.failed or ('500 Internal Server Error' not in apt_upgrade_result.msg)
       when: ansible_facts['os_family'] == 'Debian'
 
-    - name: Perform a dist-upgrade
+    # This task now includes a retry mechanism for transient network failures.
+    - name: Perform a dist-upgrade with retry
       ansible.builtin.apt:
         upgrade: dist
+      register: dist_upgrade_result
+      retries: 5
+      delay: 15
+      until: not dist_upgrade_result.failed or ('500 Internal Server Error' not in dist_upgrade_result.msg)
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Check if a reboot is needed for Debian and Ubuntu boxes
